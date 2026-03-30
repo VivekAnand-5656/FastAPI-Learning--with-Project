@@ -1,11 +1,13 @@
 from src.users.dtos import UserSchema, LoginSchema
 from sqlalchemy.orm import Session
 from src.users.models import UserModel
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
 from pwdlib import PasswordHash
 from src.utills.settings import setting
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 import jwt
+from jwt.exceptions import InvalidTokenError,ExpiredSignatureError
+
 password_hash = PasswordHash.recommended()
 
 
@@ -24,6 +26,7 @@ def login(body:LoginSchema,db:Session):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wrong Password!")
     
     exp_time = datetime.now() + timedelta(minutes=setting.EXP_TIME)
+    # exp_time = datetime.now(timezone.utc) + timedelta(seconds=30)
     token = jwt.encode({"_id":user.id, "exp":exp_time}, setting.SECRET_KEY, setting.ALGORITHM)
     
     return {
@@ -59,3 +62,26 @@ def register(body:UserSchema, db:Session):
     db.commit()
     db.refresh(new_user)
     return new_user
+
+# ------ TOKEN Send ---------
+def is_authorized(request:Request, db:Session):
+    try:
+        token = request.headers.get("Authorization")
+        token = token.split(" ")[-1]
+        data = jwt.decode(token, setting.SECRET_KEY, setting.ALGORITHM)
+        user_id = data.get("_id")
+        
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="You are Unauthorized")
+        
+        print(data)
+        return user
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token Expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Token")
+    
+
+
+    # =============== Authorization till Create Task rest left -----------------
